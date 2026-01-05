@@ -137,6 +137,15 @@ class LIGHTGBM_EXPORT Boosting {
   virtual void PredictRawByMap(const std::unordered_map<int, double>& features, double* output,
                                const PredictionEarlyStopInstance* early_stop) const = 0;
 
+  /*!
+  * \brief Batch prediction for multiple rows (AVX-512 optimized)
+  * \param features Row-major matrix of features [nrow x ncol]
+  * \param nrow Number of rows
+  * \param ncol Number of columns (features)
+  * \param output Output array of size nrow
+  */
+  virtual void PredictRawBatch(const double* features, int nrow, int ncol, double* output) const = 0;
+
 
   /*!
   * \brief Prediction for one record, sigmoid transformation will be used if needed

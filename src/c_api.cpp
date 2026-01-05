@@ -517,6 +517,21 @@ class Booster {
     *out_len = num_pred_in_one_row * nrow;
   }
 
+  /*!
+  * \brief Batch prediction using AVX-512 optimized path
+  * \param features Row-major double array of features
+  * \param nrow Number of rows
+  * \param ncol Number of columns
+  * \param out_result Output array
+  * \param out_len Output length
+  */
+  void PredictBatchDirect(const double* features, int nrow, int ncol,
+                          double* out_result, int64_t* out_len) const {
+    SHARED_LOCK(mutex_);
+    boosting_->PredictRawBatch(features, nrow, ncol, out_result);
+    *out_len = nrow;
+  }
+
   void PredictSparse(int start_iteration, int num_iteration, int predict_type, int64_t nrow, int ncol,
                      std::function<std::vector<std::pair<int, double>>(int64_t row_idx)> get_row_fun,
                      const Config& config, int64_t* out_elements_size,
@@ -2531,11 +2546,29 @@ int LGBM_BoosterPredictForMat(BoosterHandle handle,
   config.Set(param);
   OMP_SET_NUM_THREADS(config.num_threads);
   Booster* ref_booster = reinterpret_cast<Booster*>(handle);
-  auto get_row_fun = RowPairFunctionFromDenseMatrix(data, nrow, ncol, data_type, is_row_major);
-  ref_booster->Predict(start_iteration, num_iteration, predict_type, nrow, ncol, get_row_fun,
-                       config, out_result, out_len);
+  
+  // Use AVX-512 optimized batch path for:
+  // - Normal prediction or raw score (not leaf index, not contrib)
+  // - Double precision data
+  // - Row-major format
+  // - Default iterations (start=0, num=-1 means all)
+  bool use_batch_path = (predict_type == C_API_PREDICT_NORMAL || predict_type == C_API_PREDICT_RAW_SCORE)
+                        && data_type == C_API_DTYPE_FLOAT64
+                        && is_row_major == 1
+                        && start_iteration == 0
+                        && num_iteration == -1;
+  
+  if (use_batch_path) {
+    const double* features = static_cast<const double*>(data);
+    ref_booster->PredictBatchDirect(features, nrow, ncol, out_result, out_len);
+  } else {
+    auto get_row_fun = RowPairFunctionFromDenseMatrix(data, nrow, ncol, data_type, is_row_major);
+    ref_booster->Predict(start_iteration, num_iteration, predict_type, nrow, ncol, get_row_fun,
+                         config, out_result, out_len);
+  }
   API_END();
 }
+
 
 int LGBM_BoosterPredictForMatSingleRow(BoosterHandle handle,
                                        const void* data,

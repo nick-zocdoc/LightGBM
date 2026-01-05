@@ -7,6 +7,7 @@
 
 #include <LightGBM/dataset.h>
 #include <LightGBM/meta.h>
+#include <LightGBM/tree_avx512.hpp>
 
 #include <cstdint>
 #include <string>
@@ -133,6 +134,14 @@ class Tree {
   */
   inline double Predict(const double* feature_values) const;
   inline double PredictByMap(const std::unordered_map<int, double>& feature_values) const;
+
+  /*!
+  * \brief Batch prediction on multiple records (AVX-512 optimized)
+  * \param row_features Array of pointers to feature arrays for each row
+  * \param output Output array for predictions
+  * \param num_rows Number of rows to process
+  */
+  inline void PredictBatch(const double** row_features, double* output, int num_rows) const;
 
   inline int PredictLeafIndex(const double* feature_values) const;
   inline int PredictLeafIndexByMap(const std::unordered_map<int, double>& feature_values) const;
@@ -612,6 +621,33 @@ inline double Tree::Predict(const double* feature_values) const {
       return leaf_value_[0];
     }
   }
+}
+
+inline void Tree::PredictBatch(const double** row_features, double* output, int num_rows) const {
+  // For linear trees, fall back to per-row prediction
+  if (is_linear_) {
+    for (int i = 0; i < num_rows; ++i) {
+      output[i] = Predict(row_features[i]);
+    }
+    return;
+  }
+  
+  // Use AVX-512 optimized batch prediction
+  PredictTreeBatchAVX512(
+    num_leaves_,
+    num_cat_,
+    is_linear_,
+    decision_type_.data(),
+    split_feature_.data(),
+    threshold_.data(),
+    left_child_.data(),
+    right_child_.data(),
+    leaf_value_.data(),
+    num_cat_ > 0 ? cat_boundaries_.data() : nullptr,
+    num_cat_ > 0 ? cat_threshold_.data() : nullptr,
+    row_features,
+    output,
+    num_rows);
 }
 
 inline double Tree::PredictByMap(const std::unordered_map<int, double>& feature_values) const {

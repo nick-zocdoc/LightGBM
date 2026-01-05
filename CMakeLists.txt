@@ -7,6 +7,7 @@ option(USE_CUDA "Enable CUDA-accelerated training " OFF)
 option(USE_ROCM "Enable ROCm-accelerated training " OFF)
 option(USE_DEBUG "Set to ON for Debug mode" OFF)
 option(USE_SANITIZER "Use sanitizer flags" OFF)
+option(USE_AVX512 "Enable AVX-512 optimizations for inference" OFF)
 set(
   ENABLED_SANITIZERS
   "address" "leak" "undefined"
@@ -334,6 +335,10 @@ if(UNIX OR MINGW OR CYGWIN)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
   else()
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+  endif()
+  if(USE_AVX512)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mfma")
+      message(STATUS "AVX-512 optimizations enabled")
   endif()
   if(USE_SWIG)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")

@@ -301,6 +301,15 @@ class GBDT : public GBDTBase {
   void PredictRawByMap(const std::unordered_map<int, double>& features, double* output,
                        const PredictionEarlyStopInstance* early_stop) const override;
 
+  /*!
+  * \brief Batch prediction for multiple rows (AVX-512 optimized)
+  * \param features Row-major matrix of features [nrow x ncol]
+  * \param nrow Number of rows
+  * \param ncol Number of columns (features)
+  * \param output Output array of size nrow
+  */
+  void PredictRawBatch(const double* features, int nrow, int ncol, double* output) const override;
+
   void Predict(const double* features, double* output,
                const PredictionEarlyStopInstance* earlyStop) const override;
 

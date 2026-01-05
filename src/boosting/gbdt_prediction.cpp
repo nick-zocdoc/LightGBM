@@ -4,9 +4,12 @@
  */
 #include <LightGBM/objective_function.h>
 #include <LightGBM/prediction_early_stop.h>
+#include <LightGBM/tree.h>
 #include <LightGBM/utils/openmp_wrapper.h>
 
 #include <unordered_map>
+#include <vector>
+#include <cstring>
 
 #include "gbdt.h"
 
@@ -50,6 +53,50 @@ void GBDT::PredictRawByMap(const std::unordered_map<int, double>& features, doub
         return;
       }
       early_stop_round_counter = 0;
+    }
+  }
+}
+
+void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* output) const {
+  // Initialize output to zero
+  std::memset(output, 0, sizeof(double) * nrow);
+  
+  const int end_iteration_for_pred = start_iteration_for_pred_ + num_iteration_for_pred_;
+  const int num_threads = OMP_NUM_THREADS();
+  
+  // Each thread processes a chunk of rows through ALL trees
+  // This keeps tree data cache-hot while processing batches of rows
+  #pragma omp parallel num_threads(num_threads)
+  {
+    const int tid = omp_get_thread_num();
+    const int chunk_size = (nrow + num_threads - 1) / num_threads;
+    const int start_row = tid * chunk_size;
+    const int end_row = std::min(start_row + chunk_size, nrow);
+    const int my_nrow = end_row - start_row;
+    
+    if (my_nrow > 0) {
+      // Create row pointers for this thread's chunk
+      std::vector<const double*> row_ptrs(my_nrow);
+      for (int i = 0; i < my_nrow; ++i) {
+        row_ptrs[i] = features + (start_row + i) * ncol;
+      }
+      
+      // Temporary buffer for per-tree results
+      std::vector<double> tree_results(my_nrow);
+      
+      // Process all trees, using batch prediction for each
+      for (int i = start_iteration_for_pred_; i < end_iteration_for_pred; ++i) {
+        for (int k = 0; k < num_tree_per_iteration_; ++k) {
+          // Batch predict this tree for all rows in this thread's chunk
+          models_[i * num_tree_per_iteration_ + k]->PredictBatch(
+              row_ptrs.data(), tree_results.data(), my_nrow);
+          
+          // Accumulate results
+          for (int r = 0; r < my_nrow; ++r) {
+            output[start_row + r] += tree_results[r];
+          }
+        }
+      }
     }
   }
 }
