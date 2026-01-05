@@ -632,7 +632,7 @@ inline void Tree::PredictBatch(const double** row_features, double* output, int 
     return;
   }
   
-  // Use AVX-512 optimized batch prediction
+// Use scalar batch (faster than SIMD due to branch prediction)
   PredictTreeBatchAVX512(
     num_leaves_,
     num_cat_,

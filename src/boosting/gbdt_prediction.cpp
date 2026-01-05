@@ -5,6 +5,7 @@
 #include <LightGBM/objective_function.h>
 #include <LightGBM/prediction_early_stop.h>
 #include <LightGBM/tree.h>
+#include <LightGBM/tree_avx512.hpp>
 #include <LightGBM/utils/openmp_wrapper.h>
 
 #include <unordered_map>
@@ -57,6 +58,9 @@ void GBDT::PredictRawByMap(const std::unordered_map<int, double>& features, doub
   }
 }
 
+// Static flag to enable debug for first batch only
+static bool g_batch_debug_done = false;
+
 void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* output) const {
   // Initialize output to zero
   std::memset(output, 0, sizeof(double) * nrow);
@@ -65,7 +69,16 @@ void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* o
   const int num_trees = static_cast<int>(models_.size());
   if (num_trees == 0) return;
   
-  const int num_threads = OMP_NUM_THREADS();
+  // Enable debug logging for first batch (set via environment variable)
+  bool do_debug = false;
+  if (!g_batch_debug_done && getenv("LGBM_DEBUG_TREES")) {
+    const char* mode = getenv("LGBM_DEBUG_MODE");
+    EnableTreeDebug(mode ? mode : "scalar");
+    do_debug = true;
+  }
+  
+  // Use single thread when debugging to avoid race conditions on logging
+  const int num_threads = do_debug ? 1 : OMP_NUM_THREADS();
   
   // Each thread processes a chunk of rows through ALL trees
   // This keeps tree data cache-hot while processing batches of rows
@@ -99,6 +112,12 @@ void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* o
         }
       }
     }
+  }
+  
+  // Disable debug after first batch
+  if (do_debug) {
+    DisableTreeDebug();
+    g_batch_debug_done = true;
   }
 }
 
