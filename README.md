@@ -112,8 +112,8 @@ for (size_t i = 0; i < models_.size(); i++)
 
 ## Branch
 
-- `avx512-scalar-batch` - Contains the 1.75x optimization
-- `master` - Includes crash fix only
+- `master` - Contains the 1.75x batch optimization (production ready)
+- `avx512-scalar-batch` - Contains experimental AVX-512 SIMD attempts (slower, not recommended)
 
 ## Original README
 
