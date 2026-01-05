@@ -11,7 +11,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <algorithm>
 
 namespace LightGBM {
@@ -55,20 +54,9 @@ inline void PredictTreeBatchAVX512(
     double* output,
     int num_rows) {
   
-  static int call_count = 0;
-  if (call_count < 3) {
-    fprintf(stderr, "[TREE DEBUG] PredictTreeBatchAVX512: num_leaves=%d, num_cat=%d, is_linear=%d, num_rows=%d\n",
-            num_leaves, num_cat, is_linear ? 1 : 0, num_rows);
-    fflush(stderr);
-  }
-  
   // Handle degenerate case: single leaf
   if (num_leaves <= 1) {
     double val = leaf_value[0];
-    if (call_count < 3) {
-      fprintf(stderr, "[TREE DEBUG] Single leaf case, val=%f\n", val);
-      fflush(stderr);
-    }
 #ifdef __AVX512F__
     __m512d val_vec = _mm512_set1_pd(val);
     int i = 0;
@@ -84,17 +72,11 @@ inline void PredictTreeBatchAVX512(
       output[i] = val;
     }
 #endif
-    call_count++;
     return;
   }
   
   // Skip linear trees - fall back to per-row prediction (caller handles this)
   if (is_linear) {
-    if (call_count < 3) {
-      fprintf(stderr, "[TREE DEBUG] Linear tree, skipping\n");
-      fflush(stderr);
-    }
-    call_count++;
     return;
   }
   
@@ -102,19 +84,9 @@ inline void PredictTreeBatchAVX512(
   constexpr int8_t kCategoricalMask = 1;
   constexpr int8_t kDefaultLeftMask = 2;
   
-  if (call_count < 3) {
-    fprintf(stderr, "[TREE DEBUG] Starting batch processing\n");
-    fflush(stderr);
-  }
-  
   // Process rows in batches of 8 for better cache utilization
   for (int row_start = 0; row_start < num_rows; row_start += kAVX512BatchSize) {
     int batch_size = std::min(kAVX512BatchSize, num_rows - row_start);
-    
-    if (call_count < 3 && row_start == 0) {
-      fprintf(stderr, "[TREE DEBUG] First batch, batch_size=%d\n", batch_size);
-      fflush(stderr);
-    }
     
     // Track which node each sample is at
     alignas(64) int nodes[kAVX512BatchSize] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -202,12 +174,6 @@ inline void PredictTreeBatchAVX512(
     
     // All samples reached leaves - extract values
     // Negative node index indicates leaf: leaf_index = ~node
-    if (call_count < 3 && row_start == 0) {
-      fprintf(stderr, "[TREE DEBUG] Extracting leaf values, nodes[0]=%d, ~nodes[0]=%d\n", 
-              nodes[0], ~nodes[0]);
-      fflush(stderr);
-    }
-    
 #ifdef __AVX512F__
     if (batch_size == kAVX512BatchSize) {
       alignas(64) double results[kAVX512BatchSize];
@@ -226,12 +192,6 @@ inline void PredictTreeBatchAVX512(
     }
 #endif
   }
-  
-  if (call_count < 3) {
-    fprintf(stderr, "[TREE DEBUG] PredictTreeBatchAVX512 done, output[0]=%f\n", output[0]);
-    fflush(stderr);
-  }
-  call_count++;
 }
 
 }  // namespace LightGBM
