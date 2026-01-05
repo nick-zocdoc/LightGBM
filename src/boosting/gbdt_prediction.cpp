@@ -61,7 +61,10 @@ void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* o
   // Initialize output to zero
   std::memset(output, 0, sizeof(double) * nrow);
   
-  const int end_iteration_for_pred = start_iteration_for_pred_ + num_iteration_for_pred_;
+  // Use all trees (don't rely on member variables which may not be initialized for batch path)
+  const int num_trees = static_cast<int>(models_.size());
+  if (num_trees == 0) return;
+  
   const int num_threads = OMP_NUM_THREADS();
   
   // Each thread processes a chunk of rows through ALL trees
@@ -85,16 +88,14 @@ void GBDT::PredictRawBatch(const double* features, int nrow, int ncol, double* o
       std::vector<double> tree_results(my_nrow);
       
       // Process all trees, using batch prediction for each
-      for (int i = start_iteration_for_pred_; i < end_iteration_for_pred; ++i) {
-        for (int k = 0; k < num_tree_per_iteration_; ++k) {
-          // Batch predict this tree for all rows in this thread's chunk
-          models_[i * num_tree_per_iteration_ + k]->PredictBatch(
-              row_ptrs.data(), tree_results.data(), my_nrow);
-          
-          // Accumulate results
-          for (int r = 0; r < my_nrow; ++r) {
-            output[start_row + r] += tree_results[r];
-          }
+      for (int tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
+        // Batch predict this tree for all rows in this thread's chunk
+        models_[tree_idx]->PredictBatch(
+            row_ptrs.data(), tree_results.data(), my_nrow);
+        
+        // Accumulate results
+        for (int r = 0; r < my_nrow; ++r) {
+          output[start_row + r] += tree_results[r];
         }
       }
     }
